@@ -15,7 +15,8 @@ const {
   trackInstall, 
   trackSubtitleRequest, 
   trackSubtitleServed,
-  getAnalyticsSummary 
+  getAnalyticsSummary,
+  getPublicStats 
 } = require('./lib/analytics');
 const { generateStatsHTML, generatePrivacyHTML, generateErrorHTML } = require('./lib/templates');
 const { builder, manifest, getSubtitle, subtitlesHandler, generateDynamicSubtitle } = require('./addon');
@@ -154,6 +155,18 @@ app.post('/api/track', (req, res) => {
   }
 });
 
+// Public stats API (for landing page auto-refresh)
+app.get('/api/stats/public', async (req, res) => {
+  try {
+    const stats = await getPublicStats();
+    // Edge-cache for 30s — keeps Vercel CPU near zero for popular pages
+    res.setHeader('Cache-Control', 'public, max-age=10, s-maxage=30, stale-while-revalidate=60');
+    res.json(stats);
+  } catch (error) {
+    res.json({ totalSubtitlesServed: 0, totalInstalls: 0, totalPageViews: 0, uniqueVisitors: 0, topPairs: [], live: false });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -172,16 +185,22 @@ app.get('/', (req, res) => {
   res.redirect('/configure');
 });
 
-app.get('/configure', (req, res) => {
+app.get('/configure', async (req, res) => {
   const baseUrl = getExternalUrl(req);
   const manifestWithLogo = getManifestWithLogo(req);
-  const html = generateLandingHTML(manifestWithLogo, baseUrl);
+  let publicStats;
+  try {
+    publicStats = await getPublicStats();
+  } catch (_) {
+    publicStats = { totalSubtitlesServed: 0, totalInstalls: 0, totalPageViews: 0, uniqueVisitors: 0, topPairs: [], live: false };
+  }
+  const html = generateLandingHTML(manifestWithLogo, baseUrl, publicStats);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 });
 
 // Analytics dashboard (protected with secret key)
-app.get('/stats', (req, res) => {
+app.get('/stats', async (req, res) => {
   const analyticsSecret = process.env.ANALYTICS_SECRET;
   
   // If secret is set, require it in query parameter
@@ -193,7 +212,7 @@ app.get('/stats', (req, res) => {
   
   const baseUrl = getExternalUrl(req);
   const manifestWithLogo = getManifestWithLogo(req);
-  const stats = getAnalyticsSummary();
+  const stats = await getAnalyticsSummary();
   const html = generateStatsHTML(stats, baseUrl, manifestWithLogo);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);

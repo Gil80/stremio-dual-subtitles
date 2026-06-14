@@ -5,7 +5,20 @@
 
 const { getLanguageOptions } = require('./languages');
 
-function generateLandingHTML(manifest, baseUrl) {
+function generateLandingHTML(manifest, baseUrl, publicStats) {
+  publicStats = publicStats || { totalSubtitlesServed: 0, totalInstalls: 0, totalPageViews: 0, uniqueVisitors: 0, topPairs: [], live: false };
+
+  // Format number with commas instead of K/M suffix for visual satisfaction
+  function formatNumber(n) {
+    return Number(n).toLocaleString();
+  }
+
+  // Pre-render top pairs pills
+  const topPairsHTML = (publicStats.topPairs || []).map(function(pair) {
+    const name = pair[0] || '';
+    return '<span class="pair-pill">' + name.replace(/\+/g, ' + ') + '</span>';
+  }).join('');
+
   const languageOptions = getLanguageOptions();
   
   const optionsHTML = languageOptions
@@ -552,6 +565,148 @@ function generateLandingHTML(manifest, baseUrl) {
       line-height: 1.6;
     }
     
+    /* Community Stats */
+    .stats-section {
+      padding: 80px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    
+    .stats-card {
+      background: rgba(99, 102, 241, 0.05);
+      border: 1px solid rgba(99, 102, 241, 0.15);
+      border-radius: 16px;
+      padding: 28px 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    
+    .stats-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .stats-card:hover {
+      border-color: rgba(99, 102, 241, 0.35);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(99, 102, 241, 0.12);
+    }
+    
+    .stats-card:hover::before { opacity: 1; }
+    
+    .stats-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(167, 139, 250, 0.1);
+      color: #a78bfa;
+      border-radius: 12px;
+    }
+    
+    .stats-icon svg {
+      width: 24px;
+      height: 24px;
+    }
+    
+    .stats-value {
+      font-size: 36px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 30%, rgba(167, 139, 250, 0.9));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+    
+    .stats-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    
+    .stats-footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    
+    .pair-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 14px;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.15);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.8);
+      white-space: nowrap;
+    }
+    
+    .live-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--success);
+      font-weight: 500;
+    }
+    
+    .live-dot::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: var(--success);
+      border-radius: 50%;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    }
+    
+    @keyframes countUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .stats-card.animated .stats-value {
+      animation: countUp 0.6s ease-out;
+    }
+    
+    @media (max-width: 1024px) {
+      .stats-section { padding-left: 24px; padding-right: 24px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    
+    @media (max-width: 640px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .stats-card { padding: 20px 16px; }
+      .stats-value { font-size: 28px; }
+    }
+
     /* Features Grid */
     .features-section {
       padding: 80px;
@@ -924,6 +1079,48 @@ function generateLandingHTML(manifest, baseUrl) {
     </div>
   </section>
   
+  <!-- Community Stats -->
+  <section class="stats-section" id="stats">
+    <div class="section-label">Global Community</div>
+    <h2 class="section-title">Join Thousands Learning Languages Naturally</h2>
+    
+    <div class="stats-grid">
+      <div class="stats-card">
+        <div class="stats-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line></svg>
+        </div>
+        <div class="stats-value" data-target="${publicStats.totalSubtitlesServed}">${formatNumber(publicStats.totalSubtitlesServed)}</div>
+        <div class="stats-label">Dual Subs Delivered</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </div>
+        <div class="stats-value" data-target="${publicStats.totalInstalls}">${formatNumber(publicStats.totalInstalls)}</div>
+        <div class="stats-label">Bilingual Viewers</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        </div>
+        <div class="stats-value" data-target="${publicStats.totalPageViews}">${formatNumber(publicStats.totalPageViews)}</div>
+        <div class="stats-label">Global Interactions</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        </div>
+        <div class="stats-value">70+</div>
+        <div class="stats-label">Languages Bridged</div>
+      </div>
+    </div>
+    
+    <div class="stats-footer">
+      ${topPairsHTML ? '<span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted); margin-right:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg> Top Learning Paths:</span>' + topPairsHTML : ''}
+      <span class="live-dot">Updated live</span>
+    </div>
+  </section>
+
   <!-- FAQ -->
   <section class="faq-section" id="faq">
     <div class="section-label">Questions?</div>
@@ -1158,6 +1355,49 @@ function generateLandingHTML(manifest, baseUrl) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: 'pageView', page: 'landing' })
     }).catch(() => {});
+    
+    // ── Community Stats: CountUp on scroll + auto-refresh ──
+    (function() {
+      function fmtNum(n) {
+        return Number(n).toLocaleString();
+      }
+      
+      // Animate cards when they scroll into view
+      var statsCards = document.querySelectorAll('.stats-card');
+      if (statsCards.length && 'IntersectionObserver' in window) {
+        var obs = new IntersectionObserver(function(entries) {
+          entries.forEach(function(e) {
+            if (e.isIntersecting) {
+              e.target.classList.add('animated');
+              obs.unobserve(e.target);
+            }
+          });
+        }, { threshold: 0.3 });
+        statsCards.forEach(function(c) { obs.observe(c); });
+      }
+      
+      // Auto-refresh public stats every 30s
+      setInterval(function() {
+        fetch(BASE_URL + '/api/stats/public')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            var vals = document.querySelectorAll('.stats-value[data-target]');
+            var map = {
+              'totalSubtitlesServed': 0,
+              'totalInstalls': 1,
+              'totalPageViews': 2
+            };
+            var keys = ['totalSubtitlesServed', 'totalInstalls', 'totalPageViews'];
+            keys.forEach(function(k, i) {
+              if (vals[i] && d[k] != null) {
+                vals[i].setAttribute('data-target', d[k]);
+                vals[i].textContent = fmtNum(d[k]);
+              }
+            });
+          })
+          .catch(function() {});
+      }, 30000);
+    })();
   </script>
   
   <!-- Vercel Analytics -->
