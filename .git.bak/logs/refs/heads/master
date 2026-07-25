@@ -1,4 +1,0 @@
-0000000000000000000000000000000000000000 d0caf622cfd777f9917296020ed6c9c22b62faff ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1779751845 +0300	clone: from https://github.com/ummugulsunn/stremio-dual-subtitles.git
-d0caf622cfd777f9917296020ed6c9c22b62faff d36ff0859ce36120e75055ffea7520413cebe4d2 ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1779752017 +0300	merge ummugulsunn/fork-robust-parsing-video-params: Merge made by the 'ort' strategy.
-d36ff0859ce36120e75055ffea7520413cebe4d2 f89efc3ae160e1a9b87936740aace7568f32882e ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1781437657 +0300	commit: feat: persistent analytics and community stats UI
-f89efc3ae160e1a9b87936740aace7568f32882e cc9a2cf3d01c052878e0bac2bb8002586dd683d1 ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1784939269 +0200	commit: feat(landing): add support section with Ko-fi and GitHub Sponsors

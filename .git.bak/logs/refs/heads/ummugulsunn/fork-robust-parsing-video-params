@@ -1,2 +1,0 @@
-0000000000000000000000000000000000000000 6a50fbc8ddda7b48345f57f4c5faa1bd1810f5b9 ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1779751862 +0300	branch: Created from refs/remotes/origin/ummugulsunn/fork-robust-parsing-video-params
-6a50fbc8ddda7b48345f57f4c5faa1bd1810f5b9 8d8749b720c2222c4e8dddbc72ed1974a5bae13c ummugulsun <ummugulsun.turkmen@istun.edu.tr> 1779751875 +0300	commit: perf(sync): optimize cross-correlation loop to reduce Vercel CPU usage
