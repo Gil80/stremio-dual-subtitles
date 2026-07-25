@@ -186,6 +186,12 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
       align-items: center;
     }
     
+    .nav-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    
     .nav-links a {
       color: var(--text-muted);
       text-decoration: none;
@@ -217,6 +223,19 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
     }
     
     .nav-github svg { width: 16px; height: 16px; }
+    
+    .nav-sponsor-link {
+      color: #fb7185 !important;
+      font-weight: 600 !important;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .nav-sponsor-link:hover {
+      color: #fda4af !important;
+      text-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
+    }
     
     /* Hero Section - Split Layout */
     .hero {
@@ -808,6 +827,124 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
       line-height: 1.7;
     }
     
+    /* Support Section */
+    .support-section {
+      padding: 100px 80px;
+      max-width: 1400px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    
+    .support-desc {
+      max-width: 680px;
+      margin: -32px auto 48px;
+      color: var(--text-muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    
+    .support-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    .support-card-link {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 24px 28px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      text-decoration: none;
+      text-align: left;
+      backdrop-filter: blur(20px);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .support-card-link:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(99, 102, 241, 0.1);
+    }
+    
+    .kofi-card:hover {
+      border-color: rgba(244, 63, 94, 0.4);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(244, 63, 94, 0.12);
+    }
+    
+    .support-card-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 24px;
+    }
+    
+    .support-card-icon svg {
+      width: 24px;
+      height: 24px;
+    }
+    
+    .kofi-icon {
+      background: rgba(244, 63, 94, 0.12);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.2);
+    }
+    
+    .github-icon {
+      background: rgba(99, 102, 241, 0.12);
+      color: #818cf8;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+    
+    .github-icon svg {
+      width: 24px;
+      height: 24px;
+    }
+    
+    .support-card-info {
+      flex: 1;
+    }
+    
+    .support-card-info h4 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .support-card-info p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+    
+    .support-card-arrow {
+      color: var(--text-muted);
+      transition: transform 0.2s, color 0.2s;
+    }
+    
+    .support-card-link:hover .support-card-arrow {
+      color: var(--text);
+      transform: translateX(4px);
+    }
+    
+    .support-card-arrow svg {
+      width: 20px;
+      height: 20px;
+    }
+    
     /* Footer */
     .footer {
       padding: 40px 80px;
@@ -874,7 +1011,7 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
       .hero-features { justify-content: center; }
       .config-card { max-width: 480px; margin: 0 auto; }
       
-      .how-section, .features-section, .faq-section, .footer {
+      .how-section, .features-section, .faq-section, .support-section, .footer {
         padding-left: 24px;
         padding-right: 24px;
       }
@@ -913,6 +1050,7 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
       <a href="#how">How It Works</a>
       <a href="#features">Features</a>
       <a href="#faq">FAQ</a>
+      <a href="#support" class="nav-sponsor-link">Sponsor ❤️</a>
       <a href="https://github.com/ummugulsunn/stremio-dual-subtitles" target="_blank" class="nav-github">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         Star on GitHub
@@ -1164,12 +1302,48 @@ function generateLandingHTML(manifest, baseUrl, publicStats) {
     </div>
   </section>
   
+  <!-- Support -->
+  <section class="support-section" id="support">
+    <div class="section-label">Open Source & Support</div>
+    <h2 class="section-title">Support Dual Subtitles</h2>
+    <p class="support-desc">This project is 100% free, open source, and built by a Computer Engineering student. If it helps your language learning journey, consider supporting to help keep the servers running!</p>
+    
+    <div class="support-grid">
+      <a href="https://ko-fi.com/ummugulsunn" target="_blank" class="support-card-link kofi-card">
+        <div class="support-card-icon kofi-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.8 7.4c-.6-3.8-5-4.4-5-4.4H4.5C3 3 2.2 4 2.2 5.5v11c0 1.5.8 2.5 2.3 2.5h10.3c1.5 0 2.2-1 2.2-2.5V13c.2 0 4.1 0 4.8-1.5.5-1.2.1-3.3-.8-4.1zM15 17.5H4.5c-.3 0-.7-.2-.7-.8v-11c0-.6.4-.8.7-.8h10.4c.3 0 .7.2.7.8v11c0 .6-.3.8-.6.8zM19 11c-.3.6-1.5.7-2 .7V6.5c1 0 2.6 0 3.3.6.4.4.7 1.6.4 2.9zM9.5 7.8c-2 0-3.6 1.6-3.6 3.6 0 2.5 3.6 5.5 3.6 5.5s3.6-3 3.6-5.5c0-2-1.6-3.6-3.6-3.6z"/></svg>
+        </div>
+        <div class="support-card-info">
+          <h4>Buy me a Coffee</h4>
+          <p>One-time support via Ko-fi (Card or PayPal)</p>
+        </div>
+        <div class="support-card-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+      </a>
+      
+      <a href="https://github.com/sponsors/ummugulsunn" target="_blank" class="support-card-link github-card">
+        <div class="support-card-icon github-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.118 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        </div>
+        <div class="support-card-info">
+          <h4>GitHub Sponsors</h4>
+          <p>Support monthly or one-time via GitHub</p>
+        </div>
+        <div class="support-card-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+      </a>
+    </div>
+  </section>
+
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-links">
       <a href="https://github.com/ummugulsunn/stremio-dual-subtitles" target="_blank">GitHub</a>
       <a href="${baseUrl}/privacy">Privacy</a>
       <a href="https://www.stremio.com/" target="_blank">Get Stremio</a>
+      <a href="https://ko-fi.com/ummugulsunn" target="_blank">Donate ❤️</a>
     </div>
     <div class="footer-copy">v${manifest.version} • Made for language learners</div>
   </footer>
