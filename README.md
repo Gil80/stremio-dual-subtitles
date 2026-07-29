@@ -496,6 +496,11 @@ A: Open an issue on [GitHub](https://github.com/ummugulsunn/stremio-dual-subtitl
 
 ## Changelog
 
+### Unreleased (2026-07-29)
+
+**Added**
+- Secondary subtitle source fallback: automatically checks a second subtitle mirror when the primary OpenSubtitles index has no coverage for your chosen language pair (fixes titles with missing translations, e.g. rare Hebrew subtitles)
+
 ### v1.1.0 (2026-02-04)
 
 **Added**
