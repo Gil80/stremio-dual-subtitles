@@ -63,7 +63,7 @@ A Stremio addon that displays **two subtitle languages simultaneously** - design
 
 The fastest way to get started - no installation required.
 
-1. Open your browser and visit **[stremio-dual-subtitles.vercel.app](https://stremio-dual-subtitles.vercel.app)**
+1. Open your browser and visit **[stremio-dual-subtitles-three.vercel.app](https://stremio-dual-subtitles-three.vercel.app/configure)**
 2. Select your **Primary Language** (the language you're learning)
 3. Select your **Secondary Language** (your native language)
 4. Click **"Install to Stremio"**
