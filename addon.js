@@ -858,7 +858,7 @@ async function subtitlesHandler({ type, id, extra, config }) {
       url: `{{ADDON_URL}}/subs/${dynamicParams}.srt${videoQuery ? `?${videoQuery}` : ''}`,
       lang: mainLang,
       SubtitlesName:
-        `Dual (${mainLang.toUpperCase()}+${transLang.toUpperCase()}) - ` +
+        `★ Dual (${mainLang.toUpperCase()}+${transLang.toUpperCase()}) - ` +
         `${getLanguageName(mainLang)} + ${getLanguageName(transLang)}`
     }];
 
