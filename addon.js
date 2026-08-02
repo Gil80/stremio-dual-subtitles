@@ -123,7 +123,7 @@ const {
   getLanguageName
 } = require('./languages');
 const { alignAndMatch } = require('./lib/syncEngine');
-const { generateCandidatePairs } = require('./lib/sourceSelection');
+const { generateCandidatePairs, rankCandidatesForLanguage, buildHebrewEntries } = require('./lib/sourceSelection');
 
 // Optional video-matching parameters (forwarded from Stremio extras).
 // These help OpenSubtitles pick the right release variant for the exact
@@ -760,6 +760,114 @@ async function selectAndMergeBestPair(candidatePairs, mainLang, transLang) {
   return best;
 }
 
+/**
+ * Build the Stremio subtitles-handler response for a Hebrew-involved
+ * language pair: one picker entry per Hebrew candidate from every
+ * source (no cap), each paired with a single fixed candidate for the
+ * other configured language. Priority order: Wizdom, Ktuvit,
+ * OpenSubtitles primary, then the community mirror — the mirror is
+ * queried only if the first three collectively have zero Hebrew
+ * candidates or zero fixedLang candidate.
+ */
+async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, fixedLang, videoParams, videoQuery) {
+  const { fetchWizdomSubtitles, fetchKtuvitSubtitles } = require('./lib/hebrewSources');
+  const { fetchSecondarySubtitles } = require('./lib/secondarySource');
+
+  const [wizdomSubs, ktuvitSubs, primarySubs] = await Promise.all([
+    fetchWizdomSubtitles(imdbId, type, season, episode),
+    fetchKtuvitSubtitles(imdbId, type, season, episode),
+    fetchAllSubtitles(imdbId, type, season, episode, videoParams, 'heb', fixedLang)
+  ]);
+
+  const primarySubsList = primarySubs || [];
+
+  const primaryHebRaw = filterSubtitlesByLanguage(primarySubsList, 'heb') || [];
+  const primaryHebSubs = primaryHebRaw.map(s => ({
+    id: `opensubtitles:${s.id}`,
+    url: s.url,
+    lang: 'heb',
+    source: 'opensubtitles',
+    label: String(s.id)
+  }));
+
+  const fixedRanked = rankCandidatesForLanguage(primarySubsList, fixedLang);
+  let fixedCandidate = fixedRanked.length > 0
+    ? { id: `opensubtitles:${fixedRanked[0].id}`, url: fixedRanked[0].url, lang: fixedLang }
+    : null;
+
+  const hasAnyHeb = wizdomSubs.length > 0 || ktuvitSubs.length > 0 || primaryHebSubs.length > 0;
+
+  let mirrorHebSubs = [];
+  if (!hasAnyHeb || !fixedCandidate) {
+    debugServer.log(
+      `Hebrew multi-source: primary sources missing coverage (heb=${!hasAnyHeb}, ${fixedLang}=${!fixedCandidate}), trying mirror fallback`
+    );
+    const mirrorSubs = await fetchSecondarySubtitles(imdbId, type, 'heb', fixedLang);
+
+    if (!hasAnyHeb) {
+      mirrorHebSubs = mirrorSubs
+        .filter(s => s.lang === 'heb')
+        .map(s => ({
+          id: `mirror:${s.id}`,
+          url: s.url,
+          lang: 'heb',
+          source: 'mirror',
+          label: s.label || s.id
+        }));
+    }
+
+    if (!fixedCandidate) {
+      const mirrorFixed = mirrorSubs.find(s => s.lang === fixedLang);
+      if (mirrorFixed) {
+        fixedCandidate = { id: `mirror:${mirrorFixed.id}`, url: mirrorFixed.url, lang: fixedLang };
+      }
+    }
+  }
+
+  if (!fixedCandidate) {
+    debugServer.warn(`Hebrew multi-source: no ${fixedLang} candidate found from any source`);
+    return { subtitles: [] };
+  }
+
+  const sourceGroups = [
+    { source: 'wizdom', candidates: wizdomSubs },
+    { source: 'ktuvit', candidates: ktuvitSubs },
+    { source: 'opensubtitles', candidates: primaryHebSubs },
+    { source: 'mirror', candidates: mirrorHebSubs }
+  ];
+
+  const entries = buildHebrewEntries(sourceGroups, fixedCandidate, fixedLang);
+
+  if (entries.length === 0) {
+    debugServer.warn('Hebrew multi-source: no Hebrew candidates found from any source');
+    return { subtitles: [] };
+  }
+
+  const finalSubtitles = entries.map(entry => {
+    const dynamicParams = [
+      type,
+      imdbId,
+      season || '0',
+      episode || '0',
+      'heb',
+      fixedLang,
+      encodeURIComponent(entry.mainSub.id),
+      encodeURIComponent(entry.fixedSub.id)
+    ].join('/');
+
+    return {
+      id: entry.id,
+      url: `{{ADDON_URL}}/subs/${dynamicParams}.srt${videoQuery ? `?${videoQuery}` : ''}`,
+      lang: 'heb',
+      SubtitlesName: `★ [${entry.source}] ${entry.label} + ${getLanguageName(fixedLang)}`
+    };
+  });
+
+  debugServer.log(`Hebrew multi-source: publishing ${finalSubtitles.length} entries`);
+
+  return { subtitles: finalSubtitles, cacheMaxAge: 6 * 3600 };
+}
+
 // Subtitle handler function
 async function subtitlesHandler({ type, id, extra, config }) {
   debugServer.log('Subtitle request:', sanitizeForLogging({ type, id }));
@@ -808,6 +916,14 @@ async function subtitlesHandler({ type, id, extra, config }) {
       videoHash: extra?.videoHash
     };
     const videoQuery = serializeVideoParams(videoParams);
+
+    // Hebrew gets its own multi-source picker-list path (Wizdom, Ktuvit,
+    // OpenSubtitles, mirror fallback) — every other language pair keeps
+    // the original single-best-pair behavior below, untouched.
+    const fixedLang = mainLang === 'heb' ? transLang : (transLang === 'heb' ? mainLang : null);
+    if (fixedLang !== null) {
+      return await buildHebrewMultiSourceResponse(imdbId, type, season, episode, fixedLang, videoParams, videoQuery);
+    }
 
     // Fetch all subtitles
     debugServer.log('Fetching subtitles from OpenSubtitles...');
