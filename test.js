@@ -1178,6 +1178,43 @@ test('alignAndMatch: piecewise-drifted track matches better with local offsets e
 });
 
 // ============================================================================
+// clientDetection — desktop/browser UA classifier [Phase 2]
+// ============================================================================
+console.log('\n--- clientDetection ---');
+
+const { isDesktopBrowserLikeClient } = require('./lib/clientDetection');
+
+test('isDesktopBrowserLikeClient: the confirmed live Windows desktop UA is allowed', () => {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0';
+  assert.strictEqual(isDesktopBrowserLikeClient(ua), true);
+});
+
+test('isDesktopBrowserLikeClient: a Firefox-on-Linux desktop UA is allowed (not Chrome-only)', () => {
+  const ua = 'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0';
+  assert.strictEqual(isDesktopBrowserLikeClient(ua), true);
+});
+
+test('isDesktopBrowserLikeClient: a Mac desktop browser UA is allowed', () => {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Safari/605.1.15';
+  assert.strictEqual(isDesktopBrowserLikeClient(ua), true);
+});
+
+test('isDesktopBrowserLikeClient: an Android phone browser UA is denied', () => {
+  const ua = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36';
+  assert.strictEqual(isDesktopBrowserLikeClient(ua), false);
+});
+
+test('isDesktopBrowserLikeClient: no User-Agent at all (the confirmed live Android app behavior) is denied', () => {
+  assert.strictEqual(isDesktopBrowserLikeClient(undefined), false);
+  assert.strictEqual(isDesktopBrowserLikeClient(null), false);
+  assert.strictEqual(isDesktopBrowserLikeClient(''), false);
+});
+
+test('isDesktopBrowserLikeClient: the literal string "unknown" (Phase 1 logging fallback) is denied', () => {
+  assert.strictEqual(isDesktopBrowserLikeClient('unknown'), false);
+});
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 runAsyncTests().then(() => {
