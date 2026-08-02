@@ -10,6 +10,7 @@ const axios = require('axios');
 const pako = require('pako');
 const sanitize = require('sanitize-html');
 const { debugServer, sanitizeForLogging, logUserAgentSample } = require('./lib/debug');
+const { isDesktopBrowserLikeClient } = require('./lib/clientDetection');
 /**
  * Simple SRT parser (more reliable than external libraries)
  */
@@ -917,11 +918,7 @@ function assignHebrewSlots(mainLang, transLang, hebSub, fixedSub) {
  */
 async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery, userAgent) {
   const fixedLang = mainLang === 'heb' ? transLang : mainLang;
-  // userAgent is accepted and threaded through but intentionally unused
-  // beyond this point — Phase 2 (see docs/superpowers/specs/2026-08-02-
-  // hebrew-subtitle-source-label-design.md) will gate a per-entry `lang`
-  // label on it once real client User-Agent samples are collected.
-  void userAgent;
+  const showSourceLabel = isDesktopBrowserLikeClient(userAgent);
   const ctx = createHebSourceContext({ imdbId, type, season, episode, videoParams, fixedLang });
 
   const primarySources = HEB_SOURCES.filter(s => !s.fallbackOnly);
@@ -985,11 +982,12 @@ async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mai
       encodeURIComponent(slots.transSub.id)
     ].join('/');
 
+    const labelText = `[${entry.source}] ${entry.label} + ${getLanguageName(fixedLang)}`;
     return {
       id: entry.id,
       url: `{{ADDON_URL}}/subs/${dynamicParams}.srt${videoQuery ? `?${videoQuery}` : ''}`,
-      lang: mainLang,
-      SubtitlesName: `★ [${entry.source}] ${entry.label} + ${getLanguageName(fixedLang)}`
+      lang: showSourceLabel ? labelText : mainLang,
+      SubtitlesName: `★ ${labelText}`
     };
   });
 

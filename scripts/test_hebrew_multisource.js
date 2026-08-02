@@ -81,6 +81,21 @@ async function testHebrewListing() {
     process.exit(1);
   }
 
+  const desktopResult = await subtitlesHandler({
+    type: 'movie',
+    id: 'tt15047880',
+    extra: {},
+    config: { mainLang: 'Hebrew [heb]', transLang: 'Russian [rus]' },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0'
+  });
+  const desktopSubs = desktopResult.subtitles || [];
+  const labeledCount = desktopSubs.filter(s => /^\[\w+\]/.test(s.lang)).length;
+  console.log(`Desktop-UA listing: ${labeledCount}/${desktopSubs.length} entries have a [source]-labeled lang`);
+  if (labeledCount !== desktopSubs.length) {
+    console.log('FAILED: expected every entry to carry a [source]-labeled lang when the UA is desktop-shaped');
+    process.exit(1);
+  }
+
   console.log('HEBREW LISTING SUCCESS');
 }
 

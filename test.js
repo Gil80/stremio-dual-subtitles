@@ -899,7 +899,7 @@ test('HEB_SOURCES: every row constructs ids with its own prefix, and they round-
  * Stub every registry row's network call, run the real listing path, and
  * restore. Returns the published subtitles array.
  */
-async function listWithStubbedSources({ wizdom = [], ktuvit = [], opensubtitles = [], mirror = [] }, mainLang, transLang) {
+async function listWithStubbedSources({ wizdom = [], ktuvit = [], opensubtitles = [], mirror = [] }, mainLang, transLang, userAgent) {
   const originals = new Map();
   const byName = { wizdom, ktuvit, opensubtitles, mirror };
   const calls = [];
@@ -912,7 +912,7 @@ async function listWithStubbedSources({ wizdom = [], ktuvit = [], opensubtitles 
   }
   try {
     const result = await buildHebrewMultiSourceResponse(
-      '15047880', 'movie', null, null, mainLang, transLang, {}, ''
+      '15047880', 'movie', null, null, mainLang, transLang, {}, '', userAgent
     );
     return { subtitles: result.subtitles || [], calls };
   } finally {
@@ -926,6 +926,57 @@ const MIRROR_RAW = [
   { id: 'v3plus-13921082', url: 'https://mirror/2.srt', lang: 'heb', label: 'Disclosure.Day.2021.BluRay' },
   { id: 'v3plus-99000001', url: 'https://mirror/r.srt', lang: 'rus', label: 'Disclosure.Day.RUS' }
 ];
+
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0';
+
+testAsync('listing: desktop UA gets a [source]-labeled lang; no UA keeps plain lang [Phase 2]', async () => {
+  const wizdomRaw = [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'Some.Release.Name' }];
+  const osRaw = [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }];
+
+  const withDesktopUa = await listWithStubbedSources(
+    { wizdom: wizdomRaw, opensubtitles: osRaw }, 'heb', 'rus', DESKTOP_UA
+  );
+  assert.strictEqual(withDesktopUa.subtitles.length, 1);
+  assert.strictEqual(
+    withDesktopUa.subtitles[0].lang,
+    '[wizdom] Some.Release.Name + Russian',
+    `expected a [source]-labeled lang, got: ${withDesktopUa.subtitles[0].lang}`
+  );
+  // SubtitlesName must be unaffected by this change — still the existing ★-prefixed text.
+  assert.strictEqual(withDesktopUa.subtitles[0].SubtitlesName, '★ [wizdom] Some.Release.Name + Russian');
+
+  const withNoUa = await listWithStubbedSources(
+    { wizdom: wizdomRaw, opensubtitles: osRaw }, 'heb', 'rus', undefined
+  );
+  assert.strictEqual(withNoUa.subtitles.length, 1);
+  assert.strictEqual(
+    withNoUa.subtitles[0].lang,
+    'heb',
+    `expected plain lang for a client with no User-Agent, got: ${withNoUa.subtitles[0].lang}`
+  );
+
+  const androidUa = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36';
+  const withAndroidUa = await listWithStubbedSources(
+    { wizdom: wizdomRaw, opensubtitles: osRaw }, 'heb', 'rus', androidUa
+  );
+  assert.strictEqual(
+    withAndroidUa.subtitles[0].lang,
+    'heb',
+    `expected plain lang for an Android UA even if one were ever sent, got: ${withAndroidUa.subtitles[0].lang}`
+  );
+});
+
+testAsync('listing: desktop-UA labeling applies per entry across multiple sources [Phase 2]', async () => {
+  const { subtitles } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W.Release' }],
+    ktuvit: [{ id: 'ktuvit:1', url: 'https://k/1.srt', lang: 'heb', source: 'ktuvit', label: 'K.Release' }],
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }]
+  }, 'heb', 'rus', DESKTOP_UA);
+
+  assert.strictEqual(subtitles.length, 2);
+  assert.strictEqual(subtitles[0].lang, '[wizdom] W.Release + Russian');
+  assert.strictEqual(subtitles[1].lang, '[ktuvit] K.Release + Russian');
+});
 
 testAsync('listing: mirror Hebrew entries are attributed to [mirror] with their real title, never [opensubtitles] v3plus-* [#1]', async () => {
   // OpenSubtitles primary has the Russian fixed candidate but zero
