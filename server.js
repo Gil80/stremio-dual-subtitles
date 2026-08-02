@@ -19,7 +19,7 @@ const {
   getPublicStats 
 } = require('./lib/analytics');
 const { generateStatsHTML, generatePrivacyHTML, generateErrorHTML } = require('./lib/templates');
-const { builder, manifest, getSubtitle, subtitlesHandler, generateDynamicSubtitle } = require('./addon');
+const { builder, manifest, getSubtitle, subtitlesHandler, generateDynamicSubtitle, buildConfiguredManifestName } = require('./addon');
 const generateLandingHTML = require('./landingTemplate');
 const { parseLangCode } = require('./languages');
 
@@ -362,7 +362,7 @@ app.get('/:config/manifest.json', (req, res) => {
     const configuredManifest = {
       ...manifest,
       id: `${manifest.id}.${mainCode}.${transCode}`,
-      name: `${manifest.name} (${mainCode.toUpperCase()}+${transCode.toUpperCase()})`,
+      name: buildConfiguredManifestName(mainCode, transCode),
       logo: manifest.logo.startsWith('http') ? manifest.logo : `${baseUrl}${manifest.logo}`,
       behaviorHints: {
         ...manifest.behaviorHints,

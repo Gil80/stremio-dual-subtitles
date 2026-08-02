@@ -18,7 +18,8 @@ const {
     formatSrt,
     msToSrtTime
   },
-  manifest
+  manifest,
+  buildConfiguredManifestName
 } = require('./addon');
 
 const {
@@ -414,6 +415,11 @@ test('Manifest has correct id', () => {
 
 test('Manifest resources includes subtitles', () => {
   assert.ok(manifest.resources.includes('subtitles'));
+});
+
+test('buildConfiguredManifestName drops the redundant "Dual Subtitles" wording', () => {
+  assert.strictEqual(buildConfiguredManifestName('heb', 'rus'), 'HEB+RUS');
+  assert.strictEqual(buildConfiguredManifestName('eng', 'tur'), 'ENG+TUR');
 });
 
 // ============================================================================

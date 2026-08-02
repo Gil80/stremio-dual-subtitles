@@ -169,6 +169,10 @@ const MAX_PAIR_ATTEMPTS = 3;
 const ADDON_NAME = process.env.ADDON_NAME || 'Dual Subtitles';
 const ADDON_VERSION = '1.0.0';
 
+function buildConfiguredManifestName(mainCode, transCode) {
+  return `${mainCode.toUpperCase()}+${transCode.toUpperCase()}`;
+}
+
 
 
 // Create addon manifest
@@ -1332,6 +1336,7 @@ module.exports = {
   subtitleCache,
   subtitlesHandler,
   generateDynamicSubtitle,
+  buildConfiguredManifestName,
   // Exported for testing
   _test: {
     parseTimeToMs,
