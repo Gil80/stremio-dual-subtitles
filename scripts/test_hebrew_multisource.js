@@ -70,4 +70,50 @@ async function testNonHebrewRegression() {
   console.log('NON-HEBREW REGRESSION SUCCESS');
 }
 
-testHebrewListing().then(testNonHebrewRegression);
+const { generateDynamicSubtitle } = require('../addon');
+
+async function testLockedPairFetch() {
+  // Re-run the listing to get a real Wizdom entry id, then fetch its
+  // .srt via generateDynamicSubtitle exactly like server.js's /subs/
+  // route would, and confirm it returns real merged content — not a
+  // silently-substituted different pair.
+  const listing = await subtitlesHandler({
+    type: 'movie',
+    id: 'tt15047880',
+    extra: {},
+    config: { mainLang: 'Hebrew [heb]', transLang: 'Russian [rus]' }
+  });
+
+  const wizdomEntry = (listing.subtitles || []).find(s => s.SubtitlesName.includes('[wizdom]'));
+  if (!wizdomEntry) {
+    console.log('FAILED: no wizdom entry in listing to test locked-fetch against');
+    process.exit(1);
+  }
+
+  // Extract mainSubId/transSubId from the entry's own generated URL
+  // (same fields server.js would parse from the real request path).
+  const match = wizdomEntry.url.match(/\/subs\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\.srt/);
+  if (!match) {
+    console.log('FAILED: could not parse dynamic URL', wizdomEntry.url);
+    process.exit(1);
+  }
+  const [, type, imdbId, season, episode, mainLang, transLang, mainSubId, transSubId] = match;
+
+  const srt = await generateDynamicSubtitle(
+    type, imdbId, season, episode, mainLang, transLang,
+    decodeURIComponent(mainSubId), decodeURIComponent(transSubId)
+  );
+
+  if (!srt) {
+    console.log('FAILED: expected merged SRT content for the locked wizdom pair, got null');
+    process.exit(1);
+  }
+  if (!decodeURIComponent(mainSubId).startsWith('wizdom:')) {
+    console.log('FAILED: test setup bug — mainSubId is not a wizdom id');
+    process.exit(1);
+  }
+
+  console.log('LOCKED PAIR FETCH SUCCESS, length:', srt.length);
+}
+
+testHebrewListing().then(testNonHebrewRegression).then(testLockedPairFetch);

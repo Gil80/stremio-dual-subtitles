@@ -997,6 +997,89 @@ async function subtitlesHandler({ type, id, extra, config }) {
 // Register the handler with the builder
 builder.defineSubtitlesHandler(subtitlesHandler);
 
+const HEB_SOURCE_PREFIXES = ['wizdom:', 'ktuvit:', 'opensubtitles:', 'mirror:'];
+
+function isLockedSourceId(id) {
+  return typeof id === 'string' && HEB_SOURCE_PREFIXES.some(p => id.startsWith(p));
+}
+
+/**
+ * Re-resolve a single source-prefixed subtitle id back to its
+ * {id, url, lang} by re-fetching that source's list for this title and
+ * finding the matching entry. Wizdom/Ktuvit/the mirror only expose a
+ * per-title list endpoint, not a per-id lookup, so this re-fetch is
+ * unavoidable — but it's the same call the listing step already made,
+ * so it's a cache-friendly repeat, not new load shape.
+ */
+async function fetchLockedCandidate(prefixedId, imdbId, type, season, episode, lang) {
+  const sepIdx = prefixedId.indexOf(':');
+  const source = prefixedId.slice(0, sepIdx);
+
+  let candidates = [];
+  if (source === 'wizdom') {
+    const { fetchWizdomSubtitles } = require('./lib/hebrewSources');
+    candidates = await fetchWizdomSubtitles(imdbId, type, season, episode);
+  } else if (source === 'ktuvit') {
+    const { fetchKtuvitSubtitles } = require('./lib/hebrewSources');
+    candidates = await fetchKtuvitSubtitles(imdbId, type, season, episode);
+  } else if (source === 'opensubtitles') {
+    const primarySubs = await fetchAllSubtitles(imdbId, type, season, episode, {}, lang, lang) || [];
+    const raw = filterSubtitlesByLanguage(primarySubs, lang) || [];
+    candidates = raw.map(s => ({ id: `opensubtitles:${s.id}`, url: s.url, lang }));
+  } else if (source === 'mirror') {
+    const { fetchSecondarySubtitles } = require('./lib/secondarySource');
+    const mirrorSubs = await fetchSecondarySubtitles(imdbId, type, lang, lang);
+    candidates = mirrorSubs
+      .filter(s => s.lang === lang)
+      .map(s => ({ id: `mirror:${s.id}`, url: s.url, lang }));
+  }
+
+  return candidates.find(c => c.id === prefixedId) || null;
+}
+
+/**
+ * Merge exactly the requested (mainSubId, transSubId) pair — no
+ * quality-gate try-loop, no substitution. If either side can't be
+ * re-resolved, fetched, parsed, or merged, return null so the caller
+ * (server.js's /subs/ route) responds 404 rather than serving a
+ * different Hebrew subtitle than the one the user picked.
+ */
+async function generateLockedPairSubtitle(mainSubId, transSubId, mainLang, transLang, imdbId, type, season, episode, cacheKey) {
+  const [mainCandidate, transCandidate] = await Promise.all([
+    fetchLockedCandidate(mainSubId, imdbId, type, season, episode, mainLang),
+    fetchLockedCandidate(transSubId, imdbId, type, season, episode, transLang)
+  ]);
+
+  if (!mainCandidate || !transCandidate) {
+    debugServer.warn('Locked pair: candidate not found on re-fetch', { mainSubId, transSubId });
+    return null;
+  }
+
+  const [mainContent, transContent] = await Promise.all([
+    fetchSubtitleContent(mainCandidate.url, mainLang),
+    fetchSubtitleContent(transCandidate.url, transLang)
+  ]);
+
+  const mainParsed = mainContent ? parseSrt(mainContent) : null;
+  const transParsed = transContent ? parseSrt(transContent) : null;
+
+  if (!mainParsed || mainParsed.length === 0 || !transParsed || transParsed.length === 0) {
+    debugServer.warn('Locked pair: one or both subtitles unparsable', { mainSubId, transSubId });
+    return null;
+  }
+
+  const merged = mergeSubtitles(mainParsed, transParsed, { mainLang, transLang });
+  if (!merged || merged.length === 0) {
+    debugServer.warn('Locked pair: merge produced no aligned lines', { mainSubId, transSubId });
+    return null;
+  }
+
+  const srtContent = formatSrt(merged);
+  debugServer.log(`Locked pair generated ${merged.length} entries for ${mainSubId} + ${transSubId}`);
+  if (srtContent) storeSubtitle(cacheKey, srtContent);
+  return srtContent;
+}
+
 /**
  * Generate merged subtitle dynamically (for serverless environments)
  * Called directly by URL. Results are cached in `subtitleCache` so any
@@ -1026,6 +1109,12 @@ async function generateDynamicSubtitle(
   if (cached) {
     debugServer.log(`Cache hit (in-instance): ${cacheKey}`);
     return cached;
+  }
+
+  if (isLockedSourceId(mainSubId) && isLockedSourceId(transSubId)) {
+    return await generateLockedPairSubtitle(
+      mainSubId, transSubId, mainLang, transLang, imdbId, type, season, episode, cacheKey
+    );
   }
 
   try {
