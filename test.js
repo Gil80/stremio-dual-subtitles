@@ -895,6 +895,14 @@ test('HEB_SOURCES: every row constructs ids with its own prefix, and they round-
   }
 });
 
+test('stripBracketedSourceTag: strips a leading bracketed tag Wizdom/Ktuvit bake into their own id', () => {
+  const { _test: { stripBracketedSourceTag } } = require('./lib/hebrewSources');
+  assert.strictEqual(stripBracketedSourceTag('[WIZDOM]Some.Release.Name.srt'), 'Some.Release.Name.srt');
+  assert.strictEqual(stripBracketedSourceTag('[KTUVIT]Another.Release.srt'), 'Another.Release.srt');
+  // No bracket tag present: passes through unchanged.
+  assert.strictEqual(stripBracketedSourceTag('Plain.Release.Name.srt'), 'Plain.Release.Name.srt');
+});
+
 /**
  * Stub every registry row's network call, run the real listing path, and
  * restore. Returns the published subtitles array.
