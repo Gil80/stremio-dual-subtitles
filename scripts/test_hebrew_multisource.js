@@ -22,6 +22,16 @@ async function testHebrewListing() {
     process.exit(1);
   }
 
+  // Safety-critical direction: a non-desktop UA must never get a
+  // [source]-labeled lang. This is the case that matters most (it's what
+  // Android actually sends), and nothing else in this live-network script
+  // checked it directly.
+  const plainLangViolations = subs.filter(s => /^\[\w+\]/.test(s.lang));
+  if (plainLangViolations.length > 0) {
+    console.log('FAILED: non-desktop UA got a [source]-labeled lang on:', plainLangViolations.map(s => s.SubtitlesName));
+    process.exit(1);
+  }
+
   // Print EVERY entry. The original version of this script only counted
   // wizdom/ktuvit and never looked at the rest, which is exactly how the
   // mislabeled mirror entries shipped unnoticed.
@@ -89,6 +99,10 @@ async function testHebrewListing() {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0'
   });
   const desktopSubs = desktopResult.subtitles || [];
+  if (desktopSubs.length === 0) {
+    console.log('FAILED: expected at least one entry from the desktop-UA call (got 0, cannot verify labeling)');
+    process.exit(1);
+  }
   const labeledCount = desktopSubs.filter(s => /^\[\w+\]/.test(s.lang)).length;
   console.log(`Desktop-UA listing: ${labeledCount}/${desktopSubs.length} entries have a [source]-labeled lang`);
   if (labeledCount !== desktopSubs.length) {

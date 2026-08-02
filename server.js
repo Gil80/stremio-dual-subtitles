@@ -10,6 +10,7 @@ const express = require('express');
 const compression = require('compression');
 const { getRouter } = require('stremio-addon-sdk');
 const { debugServer, sanitizeForLogging } = require('./lib/debug');
+const { isDesktopBrowserLikeClient } = require('./lib/clientDetection');
 const { 
   trackPageView, 
   trackInstall, 
@@ -414,8 +415,16 @@ app.get('/:config/subtitles/:type/:id/:extra?.json', async (req, res) => {
     // every play and resume, so caching it on Vercel's edge is a major
     // CPU saving for popular titles. We use a short max-age for the
     // browser/Stremio (so config changes propagate fast) but a longer
-    // s-maxage on the edge.
-    res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600, stale-while-revalidate=21600');
+    // s-maxage on the edge. Labeled (desktop-UA) responses are deliberately
+    // excluded from shared/edge caching — the response body now varies by
+    // User-Agent (labeled vs. plain `lang`), and there's no Vary header, so
+    // a cached labeled response would otherwise get served to a different
+    // (e.g. Android) client for the same URL, reproducing the cbafce7
+    // Android TV regression this UA gating exists to prevent.
+    const labeled = isDesktopBrowserLikeClient(req.headers['user-agent']);
+    res.setHeader('Cache-Control', labeled
+      ? 'private, max-age=600'
+      : 'public, max-age=600, s-maxage=3600, stale-while-revalidate=21600');
     res.json(result);
   } catch (error) {
     debugServer.error('Error handling subtitle request:', sanitizeForLogging(error.message));

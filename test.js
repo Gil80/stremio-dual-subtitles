@@ -1265,6 +1265,11 @@ test('isDesktopBrowserLikeClient: the literal string "unknown" (Phase 1 logging 
   assert.strictEqual(isDesktopBrowserLikeClient('unknown'), false);
 });
 
+test('isDesktopBrowserLikeClient: a UA with both a desktop-OS token and "Android" is denied (Android/Mobile check must run before the OS/engine check)', () => {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Android WebView test) AppleWebKit/537.36 Chrome/100.0 Mobile Safari/537.36';
+  assert.strictEqual(isDesktopBrowserLikeClient(ua), false);
+});
+
 // ============================================================================
 // RESULTS
 // ============================================================================
