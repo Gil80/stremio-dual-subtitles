@@ -9,7 +9,7 @@ const { addonBuilder } = require('stremio-addon-sdk');
 const axios = require('axios');
 const pako = require('pako');
 const sanitize = require('sanitize-html');
-const { debugServer, sanitizeForLogging } = require('./lib/debug');
+const { debugServer, sanitizeForLogging, logUserAgentSample } = require('./lib/debug');
 /**
  * Simple SRT parser (more reliable than external libraries)
  */
@@ -1001,7 +1001,7 @@ async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mai
 // Subtitle handler function
 async function subtitlesHandler({ type, id, extra, config, userAgent }) {
   debugServer.log('Subtitle request:', sanitizeForLogging({ type, id }));
-  debugServer.log('Client User-Agent:', sanitizeForLogging(userAgent || 'unknown'));
+  logUserAgentSample(userAgent || 'unknown');
 
   // Get configured languages
   const mainLangRaw = config?.mainLang || 'English [eng]';

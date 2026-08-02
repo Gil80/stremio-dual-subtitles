@@ -69,6 +69,9 @@ If you run your own instance, please:
   tunnel makes this painless).
 - Never set `DEBUG_MODE=true` in a publicly reachable deployment. Debug
   logs are sanitized but may still leak request metadata.
+- `UA_SAMPLING_MODE=true` is safe to set on a public deployment — it
+  enables only the client User-Agent sample log (used to identify
+  Stremio client platforms in the wild), independent of `DEBUG_MODE`.
 - Never commit `.env` — it's in `.gitignore` for a reason.
 - Do not expose the service directly to the internet from a development
   machine without a firewall.

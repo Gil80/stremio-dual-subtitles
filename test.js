@@ -423,12 +423,13 @@ test('buildConfiguredManifestName drops the redundant "Dual Subtitles" wording',
 });
 
 testAsync('subtitlesHandler logs the User-Agent without changing output on identical-language input', async () => {
-  const { debugServer } = require('./lib/debug');
   const { subtitlesHandler } = require('./addon');
 
-  const originalLog = debugServer.log;
+  const originalConsoleLog = console.log;
+  const originalEnv = process.env.UA_SAMPLING_MODE;
+  process.env.UA_SAMPLING_MODE = 'true';
   const logged = [];
-  debugServer.log = (...args) => { logged.push(args.join(' ')); };
+  console.log = (...args) => { logged.push(args.join(' ')); };
 
   let result;
   try {
@@ -440,13 +441,18 @@ testAsync('subtitlesHandler logs the User-Agent without changing output on ident
       userAgent: 'TestPlatform/1.0 (unit-test)'
     });
   } finally {
-    debugServer.log = originalLog;
+    console.log = originalConsoleLog;
+    if (originalEnv === undefined) {
+      delete process.env.UA_SAMPLING_MODE;
+    } else {
+      process.env.UA_SAMPLING_MODE = originalEnv;
+    }
   }
 
   assert.deepStrictEqual(result, { subtitles: [] });
   assert.ok(
     logged.some(line => line.includes('TestPlatform/1.0 (unit-test)')),
-    `expected a debugServer.log call containing the User-Agent, got: ${JSON.stringify(logged)}`
+    `expected a console.log call containing the User-Agent, got: ${JSON.stringify(logged)}`
   );
 });
 
