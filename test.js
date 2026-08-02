@@ -422,6 +422,34 @@ test('buildConfiguredManifestName drops the redundant "Dual Subtitles" wording',
   assert.strictEqual(buildConfiguredManifestName('eng', 'tur'), 'ENG+TUR');
 });
 
+testAsync('subtitlesHandler logs the User-Agent without changing output on identical-language input', async () => {
+  const { debugServer } = require('./lib/debug');
+  const { subtitlesHandler } = require('./addon');
+
+  const originalLog = debugServer.log;
+  const logged = [];
+  debugServer.log = (...args) => { logged.push(args.join(' ')); };
+
+  let result;
+  try {
+    result = await subtitlesHandler({
+      type: 'movie',
+      id: 'tt0000000',
+      extra: {},
+      config: { mainLang: 'English [eng]', transLang: 'English [eng]' },
+      userAgent: 'TestPlatform/1.0 (unit-test)'
+    });
+  } finally {
+    debugServer.log = originalLog;
+  }
+
+  assert.deepStrictEqual(result, { subtitles: [] });
+  assert.ok(
+    logged.some(line => line.includes('TestPlatform/1.0 (unit-test)')),
+    `expected a debugServer.log call containing the User-Agent, got: ${JSON.stringify(logged)}`
+  );
+});
+
 // ============================================================================
 // formatSrt roundtrip
 // ============================================================================

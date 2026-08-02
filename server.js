@@ -398,7 +398,7 @@ app.get('/:config/subtitles/:type/:id/:extra?.json', async (req, res) => {
     trackSubtitleRequest(parseLangCode(mainLang), parseLangCode(transLang), type, id);
     debugServer.log(`Subtitle request: ${type}/${id}, langs: ${parseLangCode(mainLang)}+${parseLangCode(transLang)}`);
 
-    const result = await subtitlesHandler({ type, id, extra, config });
+    const result = await subtitlesHandler({ type, id, extra, config, userAgent: req.headers['user-agent'] });
     
     // Replace placeholder URL with actual server URL
     const baseUrl = getExternalUrl(req);

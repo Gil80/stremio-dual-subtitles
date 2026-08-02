@@ -10,7 +10,8 @@ async function testHebrewListing() {
     type: 'movie',
     id: 'tt15047880',
     extra: {},
-    config: { mainLang: 'Hebrew [heb]', transLang: 'Russian [rus]' }
+    config: { mainLang: 'Hebrew [heb]', transLang: 'Russian [rus]' },
+    userAgent: 'ManualIntegrationCheck/1.0'
   });
 
   const subs = result.subtitles || [];

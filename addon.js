@@ -915,8 +915,13 @@ function assignHebrewSlots(mainLang, transLang, hebSub, fixedSub) {
  * `heb`) rather than just `fixedLang`, so each candidate lands in the
  * slot the user actually asked for.
  */
-async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery) {
+async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery, userAgent) {
   const fixedLang = mainLang === 'heb' ? transLang : mainLang;
+  // userAgent is accepted and threaded through but intentionally unused
+  // beyond this point — Phase 2 (see docs/superpowers/specs/2026-08-02-
+  // hebrew-subtitle-source-label-design.md) will gate a per-entry `lang`
+  // label on it once real client User-Agent samples are collected.
+  void userAgent;
   const ctx = createHebSourceContext({ imdbId, type, season, episode, videoParams, fixedLang });
 
   const primarySources = HEB_SOURCES.filter(s => !s.fallbackOnly);
@@ -994,8 +999,9 @@ async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mai
 }
 
 // Subtitle handler function
-async function subtitlesHandler({ type, id, extra, config }) {
+async function subtitlesHandler({ type, id, extra, config, userAgent }) {
   debugServer.log('Subtitle request:', sanitizeForLogging({ type, id }));
+  debugServer.log('Client User-Agent:', sanitizeForLogging(userAgent || 'unknown'));
 
   // Get configured languages
   const mainLangRaw = config?.mainLang || 'English [eng]';
@@ -1047,7 +1053,7 @@ async function subtitlesHandler({ type, id, extra, config }) {
     // the original single-best-pair behavior below, untouched.
     if (mainLang === 'heb' || transLang === 'heb') {
       return await buildHebrewMultiSourceResponse(
-        imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery
+        imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery, userAgent
       );
     }
 
