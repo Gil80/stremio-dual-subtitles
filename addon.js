@@ -114,9 +114,8 @@ function formatSrtSimple(subtitles) {
   return lines.join('\n');
 }
 
-const { decodeSubtitleBuffer, getLanguageAliases, isCjkLanguage } = require('./encoding');
+const { decodeSubtitleBuffer, isCjkLanguage } = require('./encoding');
 const {
-  languageMap,
   getLanguageOptions,
   extractBrowserLanguage,
   parseLangCode,
@@ -227,9 +226,17 @@ async function fetchWithRetry(url, options = {}, retries = 2, backoffMs = 500) {
 }
 
 /**
- * Fetch all subtitles from OpenSubtitles API.
+ * Fetch subtitles from the OpenSubtitles primary index ONLY.
+ *
+ * Deliberately has NO mirror fallback: callers that want the mirror must
+ * ask for it explicitly so they stay in control of the trigger condition
+ * and of how mirror-sourced entries get attributed. `fetchAllSubtitles`
+ * below wraps this with the legacy implicit fallback for the non-Hebrew
+ * path; the Hebrew multi-source path calls this one directly.
+ *
+ * @returns {Promise<Array>} raw entries (possibly empty), never null
  */
-async function fetchAllSubtitles(imdbId, type, season = null, episode = null, videoParams = {}, mainLang = null, transLang = null) {
+async function fetchOpenSubtitlesPrimary(imdbId, type, season = null, episode = null, videoParams = {}) {
   let apiUrl = `https://opensubtitles-v3.strem.io/subtitles/${type}/tt${imdbId}`;
 
   if (type === 'series' && season && episode) {
@@ -261,6 +268,22 @@ async function fetchAllSubtitles(imdbId, type, season = null, episode = null, vi
     debugServer.error('Error fetching subtitles:', sanitizeForLogging(error.message));
   }
 
+  return primarySubs;
+}
+
+/**
+ * Fetch all subtitles for a title: OpenSubtitles primary, plus the
+ * community mirror if primary is missing coverage for a needed language.
+ *
+ * NOTE: this wrapper has an IMPLICIT mirror fallback. Mirror entries are
+ * concatenated into the returned list with `v3plus-*` ids and no source
+ * tag, so callers that care about per-source attribution must NOT use
+ * this — use `fetchOpenSubtitlesPrimary` plus an explicit mirror call.
+ * Kept as-is for the legacy (non-Hebrew) single-best-pair path.
+ */
+async function fetchAllSubtitles(imdbId, type, season = null, episode = null, videoParams = {}, mainLang = null, transLang = null) {
+  const primarySubs = await fetchOpenSubtitlesPrimary(imdbId, type, season, episode, videoParams);
+
   // Fallback: only hit the secondary mirror if the primary source is
   // missing coverage for a language we actually need. Keeps the
   // already-working path (most titles) at one network call.
@@ -279,29 +302,6 @@ async function fetchAllSubtitles(imdbId, type, season = null, episode = null, vi
 
   const combined = primarySubs.concat(secondarySubs);
   return combined.length > 0 ? combined : null;
-}
-
-/**
- * Filter subtitles by language code.
- */
-function filterSubtitlesByLanguage(allSubtitles, languageId) {
-  if (!allSubtitles) return null;
-
-  const codesToMatch = getLanguageAliases(languageId);
-  const langSubs = allSubtitles.filter(sub => codesToMatch.includes(sub.lang));
-
-  if (langSubs.length === 0) return null;
-
-  // Sort by downloads (higher = better quality typically)
-  langSubs.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
-
-  return langSubs.map((sub, idx) => ({
-    id: sub.id,
-    url: sub.url,
-    lang: sub.lang,
-    langName: languageMap[sub.lang] || sub.lang,
-    downloads: sub.downloads || (langSubs.length - idx)
-  }));
 }
 
 /**
@@ -760,6 +760,144 @@ async function selectAndMergeBestPair(candidatePairs, mainLang, transLang) {
   return best;
 }
 
+// ============================================================================
+// Hebrew multi-source registry
+// ============================================================================
+
+/**
+ * SINGLE SOURCE OF TRUTH for the Hebrew multi-source picker.
+ *
+ * Each row ties together the three things that used to be written out
+ * independently in four places (listing code, re-resolution dispatch, the
+ * prefix list, and the source-group array): the source name, the id
+ * prefix its candidates carry, the network call that fetches its raw
+ * list, and the pure selector that turns that raw list into normalized
+ * `{id, url, lang, source, label}` candidates for one language.
+ *
+ * Rows are in picker priority order. `fallbackOnly` rows are never
+ * queried during a normal listing — see `buildHebrewMultiSourceResponse`
+ * for the trigger condition.
+ *
+ * Because the listing path and `fetchLockedCandidate` both build ids
+ * through the same `candidatesForLang`, a published entry id can always
+ * be re-resolved by exactly one row and can never be mis-attributed.
+ */
+const HEB_SOURCES = [
+  {
+    source: 'wizdom',
+    fallbackOnly: false,
+    // Already returns normalized `wizdom:`-prefixed heb-only candidates.
+    fetchRaw: ctx => {
+      const { fetchWizdomSubtitles } = require('./lib/hebrewSources');
+      return fetchWizdomSubtitles(ctx.imdbId, ctx.type, ctx.season, ctx.episode);
+    },
+    candidatesForLang: (raw, lang) => (raw || []).filter(c => c.lang === lang)
+  },
+  {
+    source: 'ktuvit',
+    fallbackOnly: false,
+    fetchRaw: ctx => {
+      const { fetchKtuvitSubtitles } = require('./lib/hebrewSources');
+      return fetchKtuvitSubtitles(ctx.imdbId, ctx.type, ctx.season, ctx.episode);
+    },
+    candidatesForLang: (raw, lang) => (raw || []).filter(c => c.lang === lang)
+  },
+  {
+    source: 'opensubtitles',
+    fallbackOnly: false,
+    // Primary index ONLY — deliberately not `fetchAllSubtitles`, whose
+    // implicit mirror fallback would smuggle `v3plus-*` mirror entries in
+    // here and get them stamped `source: 'opensubtitles'`.
+    fetchRaw: ctx =>
+      fetchOpenSubtitlesPrimary(ctx.imdbId, ctx.type, ctx.season, ctx.episode, ctx.videoParams),
+    candidatesForLang: (raw, lang) =>
+      rankCandidatesForLanguage(raw || [], lang).map(s => ({
+        id: `opensubtitles:${s.id}`,
+        url: s.url,
+        lang,
+        source: 'opensubtitles',
+        // The v3 index exposes no release name, so the numeric id is the
+        // only label available.
+        label: String(s.id)
+      }))
+  },
+  {
+    source: 'mirror',
+    fallbackOnly: true,
+    // Always queried with (heb, fixedLang) in that order so the listing
+    // and the later re-resolution hit the identical URL and therefore
+    // see the identical id set.
+    fetchRaw: ctx => {
+      const { fetchSecondarySubtitles } = require('./lib/secondarySource');
+      return fetchSecondarySubtitles(ctx.imdbId, ctx.type, 'heb', ctx.fixedLang);
+    },
+    candidatesForLang: (raw, lang) =>
+      (raw || [])
+        .filter(s => s.lang === lang)
+        .map(s => ({
+          id: `mirror:${s.id}`,
+          url: s.url,
+          lang,
+          source: 'mirror',
+          // The mirror DOES expose a human-readable release title.
+          label: s.label || String(s.id)
+        }))
+  }
+];
+
+for (const entry of HEB_SOURCES) entry.prefix = `${entry.source}:`;
+
+const HEB_SOURCE_PREFIXES = HEB_SOURCES.map(s => s.prefix);
+
+function isLockedSourceId(id) {
+  return typeof id === 'string' && HEB_SOURCE_PREFIXES.some(p => id.startsWith(p));
+}
+
+/**
+ * Per-request context shared by every registry lookup. `_cache` memoizes
+ * the in-flight fetch promise per source so asking one source for two
+ * different languages (heb candidates + the fixedLang pick) costs one
+ * network call, not two.
+ */
+function createHebSourceContext({ imdbId, type, season, episode, videoParams, fixedLang }) {
+  return {
+    imdbId,
+    type,
+    season,
+    episode,
+    videoParams: videoParams || {},
+    fixedLang,
+    _cache: new Map()
+  };
+}
+
+function fetchSourceRawList(entry, ctx) {
+  if (!ctx._cache.has(entry.source)) {
+    ctx._cache.set(entry.source, Promise.resolve(entry.fetchRaw(ctx)));
+  }
+  return ctx._cache.get(entry.source);
+}
+
+/**
+ * Place the Hebrew candidate and the fixed-language candidate into the
+ * user's ACTUALLY configured main/trans slots.
+ *
+ * `mergeSubtitles` treats main and trans asymmetrically — main drives cue
+ * timing and gets the bold line — so a user who configured
+ * mainLang=Russian, transLang=Hebrew must get Russian in the main slot,
+ * not Hebrew. Pure + exported for testing.
+ */
+function assignHebrewSlots(mainLang, transLang, hebSub, fixedSub) {
+  const hebIsMain = mainLang === 'heb';
+  return {
+    mainLang,
+    transLang,
+    hebIsMain,
+    mainSub: hebIsMain ? hebSub : fixedSub,
+    transSub: hebIsMain ? fixedSub : hebSub
+  };
+}
+
 /**
  * Build the Stremio subtitles-handler response for a Hebrew-involved
  * language pair: one picker entry per Hebrew candidate from every
@@ -768,59 +906,48 @@ async function selectAndMergeBestPair(candidatePairs, mainLang, transLang) {
  * OpenSubtitles primary, then the community mirror — the mirror is
  * queried only if the first three collectively have zero Hebrew
  * candidates or zero fixedLang candidate.
+ *
+ * Takes the user's configured `mainLang`/`transLang` (one of which is
+ * `heb`) rather than just `fixedLang`, so each candidate lands in the
+ * slot the user actually asked for.
  */
-async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, fixedLang, videoParams, videoQuery) {
-  const { fetchWizdomSubtitles, fetchKtuvitSubtitles } = require('./lib/hebrewSources');
-  const { fetchSecondarySubtitles } = require('./lib/secondarySource');
+async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery) {
+  const fixedLang = mainLang === 'heb' ? transLang : mainLang;
+  const ctx = createHebSourceContext({ imdbId, type, season, episode, videoParams, fixedLang });
 
-  const [wizdomSubs, ktuvitSubs, primarySubs] = await Promise.all([
-    fetchWizdomSubtitles(imdbId, type, season, episode),
-    fetchKtuvitSubtitles(imdbId, type, season, episode),
-    fetchAllSubtitles(imdbId, type, season, episode, videoParams, 'heb', fixedLang)
-  ]);
+  const primarySources = HEB_SOURCES.filter(s => !s.fallbackOnly);
+  const rawLists = await Promise.all(primarySources.map(s => fetchSourceRawList(s, ctx)));
 
-  const primarySubsList = primarySubs || [];
-
-  const primaryHebRaw = filterSubtitlesByLanguage(primarySubsList, 'heb') || [];
-  const primaryHebSubs = primaryHebRaw.map(s => ({
-    id: `opensubtitles:${s.id}`,
-    url: s.url,
-    lang: 'heb',
-    source: 'opensubtitles',
-    label: String(s.id)
+  const sourceGroups = primarySources.map((entry, i) => ({
+    source: entry.source,
+    candidates: entry.candidatesForLang(rawLists[i], 'heb')
   }));
 
-  const fixedRanked = rankCandidatesForLanguage(primarySubsList, fixedLang);
-  let fixedCandidate = fixedRanked.length > 0
-    ? { id: `opensubtitles:${fixedRanked[0].id}`, url: fixedRanked[0].url, lang: fixedLang }
-    : null;
+  const osIdx = primarySources.findIndex(s => s.source === 'opensubtitles');
+  const osEntry = primarySources[osIdx];
+  let fixedCandidate = osEntry.candidatesForLang(rawLists[osIdx], fixedLang)[0] || null;
 
-  const hasAnyHeb = wizdomSubs.length > 0 || ktuvitSubs.length > 0 || primaryHebSubs.length > 0;
+  const hasAnyHeb = sourceGroups.some(g => g.candidates.length > 0);
 
-  let mirrorHebSubs = [];
+  // Explicit, reachable mirror fallback. It can only fire here because we
+  // fetched the OpenSubtitles PRIMARY index above — the `fetchAllSubtitles`
+  // wrapper would have already run its own hidden mirror call and made
+  // this condition permanently false.
   if (!hasAnyHeb || !fixedCandidate) {
     debugServer.log(
       `Hebrew multi-source: primary sources missing coverage (heb=${!hasAnyHeb}, ${fixedLang}=${!fixedCandidate}), trying mirror fallback`
     );
-    const mirrorSubs = await fetchSecondarySubtitles(imdbId, type, 'heb', fixedLang);
+    const mirrorEntry = HEB_SOURCES.find(s => s.source === 'mirror');
+    const mirrorRaw = await fetchSourceRawList(mirrorEntry, ctx);
 
     if (!hasAnyHeb) {
-      mirrorHebSubs = mirrorSubs
-        .filter(s => s.lang === 'heb')
-        .map(s => ({
-          id: `mirror:${s.id}`,
-          url: s.url,
-          lang: 'heb',
-          source: 'mirror',
-          label: s.label || s.id
-        }));
+      sourceGroups.push({
+        source: mirrorEntry.source,
+        candidates: mirrorEntry.candidatesForLang(mirrorRaw, 'heb')
+      });
     }
-
     if (!fixedCandidate) {
-      const mirrorFixed = mirrorSubs.find(s => s.lang === fixedLang);
-      if (mirrorFixed) {
-        fixedCandidate = { id: `mirror:${mirrorFixed.id}`, url: mirrorFixed.url, lang: fixedLang };
-      }
+      fixedCandidate = mirrorEntry.candidatesForLang(mirrorRaw, fixedLang)[0] || null;
     }
   }
 
@@ -829,14 +956,7 @@ async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, fix
     return { subtitles: [] };
   }
 
-  const sourceGroups = [
-    { source: 'wizdom', candidates: wizdomSubs },
-    { source: 'ktuvit', candidates: ktuvitSubs },
-    { source: 'opensubtitles', candidates: primaryHebSubs },
-    { source: 'mirror', candidates: mirrorHebSubs }
-  ];
-
-  const entries = buildHebrewEntries(sourceGroups, fixedCandidate, fixedLang);
+  const entries = buildHebrewEntries(sourceGroups, fixedCandidate);
 
   if (entries.length === 0) {
     debugServer.warn('Hebrew multi-source: no Hebrew candidates found from any source');
@@ -844,21 +964,22 @@ async function buildHebrewMultiSourceResponse(imdbId, type, season, episode, fix
   }
 
   const finalSubtitles = entries.map(entry => {
+    const slots = assignHebrewSlots(mainLang, transLang, entry.hebSub, entry.fixedSub);
     const dynamicParams = [
       type,
       imdbId,
       season || '0',
       episode || '0',
-      'heb',
-      fixedLang,
-      encodeURIComponent(entry.mainSub.id),
-      encodeURIComponent(entry.fixedSub.id)
+      slots.mainLang,
+      slots.transLang,
+      encodeURIComponent(slots.mainSub.id),
+      encodeURIComponent(slots.transSub.id)
     ].join('/');
 
     return {
       id: entry.id,
       url: `{{ADDON_URL}}/subs/${dynamicParams}.srt${videoQuery ? `?${videoQuery}` : ''}`,
-      lang: 'heb',
+      lang: mainLang,
       SubtitlesName: `★ [${entry.source}] ${entry.label} + ${getLanguageName(fixedLang)}`
     };
   });
@@ -920,9 +1041,10 @@ async function subtitlesHandler({ type, id, extra, config }) {
     // Hebrew gets its own multi-source picker-list path (Wizdom, Ktuvit,
     // OpenSubtitles, mirror fallback) — every other language pair keeps
     // the original single-best-pair behavior below, untouched.
-    const fixedLang = mainLang === 'heb' ? transLang : (transLang === 'heb' ? mainLang : null);
-    if (fixedLang !== null) {
-      return await buildHebrewMultiSourceResponse(imdbId, type, season, episode, fixedLang, videoParams, videoQuery);
+    if (mainLang === 'heb' || transLang === 'heb') {
+      return await buildHebrewMultiSourceResponse(
+        imdbId, type, season, episode, mainLang, transLang, videoParams, videoQuery
+      );
     }
 
     // Fetch all subtitles
@@ -997,12 +1119,6 @@ async function subtitlesHandler({ type, id, extra, config }) {
 // Register the handler with the builder
 builder.defineSubtitlesHandler(subtitlesHandler);
 
-const HEB_SOURCE_PREFIXES = ['wizdom:', 'ktuvit:', 'opensubtitles:', 'mirror:'];
-
-function isLockedSourceId(id) {
-  return typeof id === 'string' && HEB_SOURCE_PREFIXES.some(p => id.startsWith(p));
-}
-
 /**
  * Re-resolve a single source-prefixed subtitle id back to its
  * {id, url, lang} by re-fetching that source's list for this title and
@@ -1010,30 +1126,17 @@ function isLockedSourceId(id) {
  * per-title list endpoint, not a per-id lookup, so this re-fetch is
  * unavoidable — but it's the same call the listing step already made,
  * so it's a cache-friendly repeat, not new load shape.
+ *
+ * Dispatch comes straight off the HEB_SOURCES registry — same rows, same
+ * fetchers, same id construction the listing used — so listing and
+ * re-resolution cannot drift and produce silent 404s.
  */
-async function fetchLockedCandidate(prefixedId, imdbId, type, season, episode, lang) {
-  const sepIdx = prefixedId.indexOf(':');
-  const source = prefixedId.slice(0, sepIdx);
+async function fetchLockedCandidate(prefixedId, ctx, lang) {
+  const entry = HEB_SOURCES.find(s => prefixedId.startsWith(s.prefix));
+  if (!entry) return null;
 
-  let candidates = [];
-  if (source === 'wizdom') {
-    const { fetchWizdomSubtitles } = require('./lib/hebrewSources');
-    candidates = await fetchWizdomSubtitles(imdbId, type, season, episode);
-  } else if (source === 'ktuvit') {
-    const { fetchKtuvitSubtitles } = require('./lib/hebrewSources');
-    candidates = await fetchKtuvitSubtitles(imdbId, type, season, episode);
-  } else if (source === 'opensubtitles') {
-    const primarySubs = await fetchAllSubtitles(imdbId, type, season, episode, {}, lang, lang) || [];
-    const raw = filterSubtitlesByLanguage(primarySubs, lang) || [];
-    candidates = raw.map(s => ({ id: `opensubtitles:${s.id}`, url: s.url, lang }));
-  } else if (source === 'mirror') {
-    const { fetchSecondarySubtitles } = require('./lib/secondarySource');
-    const mirrorSubs = await fetchSecondarySubtitles(imdbId, type, lang, lang);
-    candidates = mirrorSubs
-      .filter(s => s.lang === lang)
-      .map(s => ({ id: `mirror:${s.id}`, url: s.url, lang }));
-  }
-
+  const raw = await fetchSourceRawList(entry, ctx);
+  const candidates = entry.candidatesForLang(raw, lang);
   return candidates.find(c => c.id === prefixedId) || null;
 }
 
@@ -1043,11 +1146,23 @@ async function fetchLockedCandidate(prefixedId, imdbId, type, season, episode, l
  * re-resolved, fetched, parsed, or merged, return null so the caller
  * (server.js's /subs/ route) responds 404 rather than serving a
  * different Hebrew subtitle than the one the user picked.
+ *
+ * `mainLang`/`transLang` arrive in the user's configured order (whichever
+ * one is `heb` may be either), and the ids were placed into those same
+ * slots by `assignHebrewSlots` at listing time — so `mergeSubtitles` gets
+ * them in the user's actual order, not Hebrew-first.
  */
-async function generateLockedPairSubtitle(mainSubId, transSubId, mainLang, transLang, imdbId, type, season, episode, cacheKey) {
+async function generateLockedPairSubtitle(mainSubId, transSubId, mainLang, transLang, imdbId, type, season, episode, cacheKey, videoParams = {}) {
+  const fixedLang = mainLang === 'heb' ? transLang : mainLang;
+  // Shared context: both re-resolutions hit each source's list at most
+  // once, and `videoParams` is threaded through so the OpenSubtitles
+  // primary re-fetch sees the same filename/videoSize/videoHash the
+  // listing used (otherwise the two id sets could legitimately differ).
+  const ctx = createHebSourceContext({ imdbId, type, season, episode, videoParams, fixedLang });
+
   const [mainCandidate, transCandidate] = await Promise.all([
-    fetchLockedCandidate(mainSubId, imdbId, type, season, episode, mainLang),
-    fetchLockedCandidate(transSubId, imdbId, type, season, episode, transLang)
+    fetchLockedCandidate(mainSubId, ctx, mainLang),
+    fetchLockedCandidate(transSubId, ctx, transLang)
   ]);
 
   if (!mainCandidate || !transCandidate) {
@@ -1112,9 +1227,27 @@ async function generateDynamicSubtitle(
   }
 
   if (isLockedSourceId(mainSubId) && isLockedSourceId(transSubId)) {
-    return await generateLockedPairSubtitle(
-      mainSubId, transSubId, mainLang, transLang, imdbId, type, season, episode, cacheKey
-    );
+    // Guarded separately from the legacy try/catch below: mergeSubtitles,
+    // formatSrt and storeSubtitle are not internally guarded, so an
+    // unguarded throw here would surface as a 500 instead of the intended
+    // 404 ("this exact pair could not be produced").
+    try {
+      return await generateLockedPairSubtitle(
+        mainSubId, transSubId, mainLang, transLang, imdbId, type,
+        // Normalize the '0' sentinels the listing URL uses for movies the
+        // same way the legacy path below does. Both paths must agree:
+        // downstream fetchers guard on `type === 'series'` first today, so
+        // the raw '0' was harmless — but keeping the two paths symmetric
+        // means nobody has to rediscover that when touching a guard.
+        season !== '0' ? season : null,
+        episode !== '0' ? episode : null,
+        cacheKey,
+        normalizeVideoParams(videoParams)
+      );
+    } catch (error) {
+      debugServer.error('Error generating locked pair subtitle:', sanitizeForLogging(error.message));
+      return null;
+    }
   }
 
   try {
@@ -1209,6 +1342,10 @@ module.exports = {
     joinSubtitleLines,
     formatSrt,
     formatSrtSimple,
-    msToSrtTime
+    msToSrtTime,
+    assignHebrewSlots,
+    isLockedSourceId,
+    HEB_SOURCES,
+    buildHebrewMultiSourceResponse
   }
 };

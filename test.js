@@ -43,6 +43,28 @@ function test(name, fn) {
   }
 }
 
+// Async variant: registered here, drained at the end of the file before
+// the results are printed. Used by the Hebrew multi-source listing tests,
+// which exercise an async code path with the network layer stubbed out.
+const asyncTests = [];
+function testAsync(name, fn) {
+  asyncTests.push([name, fn]);
+}
+
+async function runAsyncTests() {
+  for (const [name, fn] of asyncTests) {
+    try {
+      await fn();
+      passed++;
+      console.log(`  PASS  ${name}`);
+    } catch (err) {
+      failed++;
+      console.error(`  FAIL  ${name}`);
+      console.error(`        ${err.message}`);
+    }
+  }
+}
+
 // ============================================================================
 // parseTimeToMs
 // ============================================================================
@@ -724,11 +746,11 @@ test('buildHebrewEntries: orders entries by source group order, one per candidat
     ] }
   ];
   const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
-  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  const entries = buildHebrewEntries(groups, fixed);
   assert.strictEqual(entries.length, 3);
   assert.strictEqual(entries[0].source, 'wizdom');
-  assert.strictEqual(entries[0].mainSub.id, 'wizdom:1');
-  assert.strictEqual(entries[1].mainSub.id, 'wizdom:2');
+  assert.strictEqual(entries[0].hebSub.id, 'wizdom:1');
+  assert.strictEqual(entries[1].hebSub.id, 'wizdom:2');
   assert.strictEqual(entries[2].source, 'ktuvit');
   assert.strictEqual(entries[2].fixedSub.id, 'rus:9');
 });
@@ -737,7 +759,7 @@ test('buildHebrewEntries: returns empty array when fixedCandidate is missing', (
   const groups = [
     { source: 'wizdom', candidates: [{ id: 'wizdom:1', url: 'u1', lang: 'heb', label: 'W1' }] }
   ];
-  const entries = buildHebrewEntries(groups, null, 'rus');
+  const entries = buildHebrewEntries(groups, null);
   assert.strictEqual(entries.length, 0);
 });
 
@@ -749,9 +771,9 @@ test('buildHebrewEntries: skips malformed candidates (missing id or url)', () =>
     ] }
   ];
   const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
-  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  const entries = buildHebrewEntries(groups, fixed);
   assert.strictEqual(entries.length, 1);
-  assert.strictEqual(entries[0].mainSub.id, 'wizdom:2');
+  assert.strictEqual(entries[0].hebSub.id, 'wizdom:2');
 });
 
 test('buildHebrewEntries: falls back to id as label when candidate has no label', () => {
@@ -759,8 +781,257 @@ test('buildHebrewEntries: falls back to id as label when candidate has no label'
     { source: 'opensubtitles', candidates: [{ id: 'opensubtitles:42', url: 'u1', lang: 'heb' }] }
   ];
   const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
-  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  const entries = buildHebrewEntries(groups, fixed);
   assert.strictEqual(entries[0].label, 'opensubtitles:42');
+});
+
+// ============================================================================
+// Hebrew multi-source: slot assignment + source attribution
+//
+// Regression coverage for the three review findings that shipped unnoticed
+// because the only existing check was a live-network "at least one wizdom,
+// at least one ktuvit" assertion that never inspected the other entries:
+//   #1  mirror-sourced entries mislabeled `[opensubtitles] v3plus-...`
+//   #2  the explicit mirror-fallback branch being unreachable dead code
+//   #3  Hebrew force-placed into the main/bold slot regardless of config
+// ============================================================================
+console.log('\n--- Hebrew multi-source ---');
+
+const {
+  _test: {
+    assignHebrewSlots,
+    isLockedSourceId,
+    HEB_SOURCES,
+    buildHebrewMultiSourceResponse
+  }
+} = require('./addon');
+
+test('assignHebrewSlots: Hebrew configured as mainLang keeps Hebrew in the main slot', () => {
+  const heb = { id: 'wizdom:1', url: 'uh', lang: 'heb' };
+  const fixed = { id: 'opensubtitles:9', url: 'uf', lang: 'rus' };
+  const slots = assignHebrewSlots('heb', 'rus', heb, fixed);
+  assert.strictEqual(slots.hebIsMain, true);
+  assert.strictEqual(slots.mainSub.id, 'wizdom:1');
+  assert.strictEqual(slots.transSub.id, 'opensubtitles:9');
+  assert.strictEqual(slots.mainLang, 'heb');
+  assert.strictEqual(slots.transLang, 'rus');
+});
+
+test('assignHebrewSlots: Hebrew configured as transLang puts the fixed language in the main slot [#3]', () => {
+  const heb = { id: 'wizdom:1', url: 'uh', lang: 'heb' };
+  const fixed = { id: 'opensubtitles:9', url: 'uf', lang: 'rus' };
+  const slots = assignHebrewSlots('rus', 'heb', heb, fixed);
+  assert.strictEqual(slots.hebIsMain, false);
+  // Russian must drive cue timing / bold line, because mergeSubtitles
+  // treats the main track asymmetrically.
+  assert.strictEqual(slots.mainSub.id, 'opensubtitles:9');
+  assert.strictEqual(slots.transSub.id, 'wizdom:1');
+  assert.strictEqual(slots.mainLang, 'rus');
+  assert.strictEqual(slots.transLang, 'heb');
+});
+
+test('HEB_SOURCES: every row constructs ids with its own prefix, and they round-trip [#4]', () => {
+  const names = HEB_SOURCES.map(s => s.source);
+  assert.deepStrictEqual(names, ['wizdom', 'ktuvit', 'opensubtitles', 'mirror']);
+
+  // opensubtitles + mirror build their own ids; wizdom/ktuvit receive
+  // already-prefixed ids from lib/hebrewSources.
+  const osRow = HEB_SOURCES.find(s => s.source === 'opensubtitles');
+  const osCands = osRow.candidatesForLang([{ id: '42', url: 'u', lang: 'heb' }], 'heb');
+  assert.strictEqual(osCands[0].id, 'opensubtitles:42');
+  assert.strictEqual(osCands[0].source, 'opensubtitles');
+
+  const mirrorRow = HEB_SOURCES.find(s => s.source === 'mirror');
+  const mCands = mirrorRow.candidatesForLang(
+    [{ id: 'v3plus-13921081', url: 'u', lang: 'heb', label: 'Disclosure.Day.2021.1080p' }], 'heb'
+  );
+  assert.strictEqual(mCands[0].id, 'mirror:v3plus-13921081');
+  assert.strictEqual(mCands[0].source, 'mirror');
+  assert.strictEqual(mCands[0].label, 'Disclosure.Day.2021.1080p');
+
+  for (const row of HEB_SOURCES) {
+    assert.strictEqual(row.prefix, `${row.source}:`);
+    assert.ok(isLockedSourceId(`${row.prefix}abc`), `${row.source} prefix not recognized`);
+  }
+});
+
+/**
+ * Stub every registry row's network call, run the real listing path, and
+ * restore. Returns the published subtitles array.
+ */
+async function listWithStubbedSources({ wizdom = [], ktuvit = [], opensubtitles = [], mirror = [] }, mainLang, transLang) {
+  const originals = new Map();
+  const byName = { wizdom, ktuvit, opensubtitles, mirror };
+  const calls = [];
+  for (const row of HEB_SOURCES) {
+    originals.set(row.source, row.fetchRaw);
+    row.fetchRaw = () => {
+      calls.push(row.source);
+      return Promise.resolve(byName[row.source]);
+    };
+  }
+  try {
+    const result = await buildHebrewMultiSourceResponse(
+      '15047880', 'movie', null, null, mainLang, transLang, {}, ''
+    );
+    return { subtitles: result.subtitles || [], calls };
+  } finally {
+    for (const row of HEB_SOURCES) row.fetchRaw = originals.get(row.source);
+  }
+}
+
+// Shape mimics what lib/secondarySource.js actually returns.
+const MIRROR_RAW = [
+  { id: 'v3plus-13921081', url: 'https://mirror/1.srt', lang: 'heb', label: 'Disclosure.Day.2021.WEB-DL' },
+  { id: 'v3plus-13921082', url: 'https://mirror/2.srt', lang: 'heb', label: 'Disclosure.Day.2021.BluRay' },
+  { id: 'v3plus-99000001', url: 'https://mirror/r.srt', lang: 'rus', label: 'Disclosure.Day.RUS' }
+];
+
+testAsync('listing: mirror Hebrew entries are attributed to [mirror] with their real title, never [opensubtitles] v3plus-* [#1]', async () => {
+  // OpenSubtitles primary has the Russian fixed candidate but zero
+  // Hebrew, and Wizdom/Ktuvit are empty — so the mirror must fire.
+  const { subtitles } = await listWithStubbedSources({
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }],
+    mirror: MIRROR_RAW
+  }, 'heb', 'rus');
+
+  assert.strictEqual(subtitles.length, 2, `expected 2 mirror heb entries, got ${subtitles.length}`);
+  for (const s of subtitles) {
+    assert.ok(s.SubtitlesName.includes('[mirror]'), `not attributed to mirror: ${s.SubtitlesName}`);
+    assert.ok(
+      !s.SubtitlesName.includes('[opensubtitles]'),
+      `mirror entry mislabeled as opensubtitles: ${s.SubtitlesName}`
+    );
+    // The label must be the mirror's human-readable title, not the raw id.
+    assert.ok(
+      /Disclosure\.Day/.test(s.SubtitlesName),
+      `mirror entry lost its real title label: ${s.SubtitlesName}`
+    );
+    assert.ok(
+      !/v3plus-/.test(s.SubtitlesName),
+      `raw v3plus id leaked into the label: ${s.SubtitlesName}`
+    );
+    // The locked-fetch id in the URL must carry the mirror: prefix.
+    assert.ok(
+      /\/mirror%3Av3plus-/.test(s.url),
+      `mirror entry id not mirror-prefixed in URL: ${s.url}`
+    );
+  }
+});
+
+testAsync('listing: NO published entry is source=opensubtitles with a v3plus-* id [#1]', async () => {
+  // The exact failure mode observed live: fetchAllSubtitles concatenated
+  // mirror entries into the primary list, which then got stamped
+  // `opensubtitles:v3plus-...`. Feeding the mirror rows to BOTH rows here
+  // proves the opensubtitles row can no longer emit them.
+  const { subtitles } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: '1' }],
+    opensubtitles: [
+      { id: '555', url: 'https://os/h.srt', lang: 'heb' },
+      { id: '777', url: 'https://os/r.srt', lang: 'rus' }
+    ],
+    mirror: MIRROR_RAW
+  }, 'heb', 'rus');
+
+  assert.ok(subtitles.length > 0, 'expected published entries');
+  for (const s of subtitles) {
+    const isOpenSubtitles = s.SubtitlesName.includes('[opensubtitles]');
+    const idInUrl = decodeURIComponent(s.url.split('/').slice(-2)[0]);
+    assert.ok(
+      !(isOpenSubtitles && idInUrl.includes('v3plus-')),
+      `opensubtitles-attributed entry carries a mirror id: ${s.SubtitlesName} (${idInUrl})`
+    );
+    assert.ok(
+      !(isOpenSubtitles && !idInUrl.startsWith('opensubtitles:')),
+      `opensubtitles-attributed entry has a foreign id: ${idInUrl}`
+    );
+  }
+});
+
+testAsync('listing: mirror is NOT queried when Wizdom/Ktuvit/OpenSubtitles already cover Hebrew + fixedLang [#2]', async () => {
+  const { subtitles, calls } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W1' }],
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }],
+    mirror: MIRROR_RAW
+  }, 'heb', 'rus');
+
+  assert.ok(!calls.includes('mirror'), 'mirror was queried despite full primary coverage');
+  assert.strictEqual(subtitles.length, 1);
+  assert.ok(subtitles[0].SubtitlesName.includes('[wizdom]'));
+});
+
+testAsync('listing: mirror fallback branch IS reachable when nothing else has Hebrew [#2]', async () => {
+  const { calls } = await listWithStubbedSources({
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }],
+    mirror: MIRROR_RAW
+  }, 'heb', 'rus');
+  assert.ok(calls.includes('mirror'), 'mirror fallback never fired — dead code regression');
+});
+
+testAsync('listing: mirror fallback also fires when only the fixedLang candidate is missing [#2]', async () => {
+  const { subtitles, calls } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W1' }],
+    opensubtitles: [],
+    mirror: MIRROR_RAW
+  }, 'heb', 'rus');
+
+  assert.ok(calls.includes('mirror'), 'mirror not queried for the missing fixedLang candidate');
+  assert.strictEqual(subtitles.length, 1, 'Hebrew set was already covered, so no mirror heb entries expected');
+  // The mirror-sourced Russian pick must be the trans-slot id in the URL.
+  assert.ok(
+    subtitles[0].url.includes('mirror%3Av3plus-99000001'),
+    `expected mirror-sourced fixed candidate in URL: ${subtitles[0].url}`
+  );
+});
+
+testAsync('listing: Hebrew as transLang keeps the user\'s configured main/trans slot order [#3]', async () => {
+  const { subtitles } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W1' }],
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }]
+  }, 'rus', 'heb');
+
+  assert.strictEqual(subtitles.length, 1);
+  const url = subtitles[0].url;
+  // /subs/movie/15047880/0/0/<mainLang>/<transLang>/<mainId>/<transId>.srt
+  const m = url.match(/\/subs\/movie\/15047880\/0\/0\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\.srt/);
+  assert.ok(m, `could not parse generated URL: ${url}`);
+  const [, urlMainLang, urlTransLang, mainId, transId] = m;
+
+  assert.strictEqual(urlMainLang, 'rus');
+  assert.strictEqual(urlTransLang, 'heb');
+  assert.strictEqual(decodeURIComponent(mainId), 'opensubtitles:777');
+  assert.strictEqual(decodeURIComponent(transId), 'wizdom:1');
+  // The published entry's lang must match the main slot, like the legacy path.
+  assert.strictEqual(subtitles[0].lang, 'rus');
+});
+
+testAsync('listing: Hebrew as mainLang still produces heb-first URLs (no regression) [#3]', async () => {
+  const { subtitles } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W1' }],
+    opensubtitles: [{ id: '777', url: 'https://os/r.srt', lang: 'rus' }]
+  }, 'heb', 'rus');
+
+  const m = subtitles[0].url.match(/\/subs\/movie\/15047880\/0\/0\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\.srt/);
+  assert.ok(m);
+  assert.strictEqual(m[1], 'heb');
+  assert.strictEqual(m[2], 'rus');
+  assert.strictEqual(decodeURIComponent(m[3]), 'wizdom:1');
+  assert.strictEqual(decodeURIComponent(m[4]), 'opensubtitles:777');
+  assert.strictEqual(subtitles[0].lang, 'heb');
+});
+
+testAsync('listing: source priority order is wizdom, ktuvit, opensubtitles, mirror', async () => {
+  const { subtitles } = await listWithStubbedSources({
+    wizdom: [{ id: 'wizdom:1', url: 'https://w/1.srt', lang: 'heb', source: 'wizdom', label: 'W1' }],
+    ktuvit: [{ id: 'ktuvit:1', url: 'https://k/1.srt', lang: 'heb', source: 'ktuvit', label: 'K1' }],
+    opensubtitles: [
+      { id: '555', url: 'https://os/h.srt', lang: 'heb' },
+      { id: '777', url: 'https://os/r.srt', lang: 'rus' }
+    ]
+  }, 'heb', 'rus');
+
+  const order = subtitles.map(s => s.SubtitlesName.match(/\[(\w+)\]/)[1]);
+  assert.deepStrictEqual(order, ['wizdom', 'ktuvit', 'opensubtitles']);
 });
 
 // ============================================================================
@@ -869,10 +1140,12 @@ test('alignAndMatch: piecewise-drifted track matches better with local offsets e
 // ============================================================================
 // RESULTS
 // ============================================================================
-console.log('\n========================================');
-console.log(`  Results: ${passed} passed, ${failed} failed`);
-console.log('========================================\n');
+runAsyncTests().then(() => {
+  console.log('\n========================================');
+  console.log(`  Results: ${passed} passed, ${failed} failed`);
+  console.log('========================================\n');
 
-if (failed > 0) {
-  process.exit(1);
-}
+  if (failed > 0) {
+    process.exit(1);
+  }
+});
