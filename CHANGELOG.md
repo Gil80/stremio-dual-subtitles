@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Multi-source Hebrew subtitles: when Hebrew is configured, every Hebrew subtitle candidate from Wizdom, Ktuvit, and OpenSubtitles (plus the mirror as a last-resort fallback) is listed as its own picker entry, so sync issues on one release can be worked around by trying another.
 - Secondary subtitle source fallback: when the primary OpenSubtitles index has no subtitles for the requested main or translation language, automatically query a second mirror (`opensubtitles.stremio.homes`) with broader catalog coverage before returning an empty result. Fallback-only — queried only when the primary source is missing a needed language, so titles that already work see no added latency. Disable via `SECONDARY_SOURCE_ENABLED=false`.
 
 ### Performance
