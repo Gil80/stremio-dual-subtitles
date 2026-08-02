@@ -23,6 +23,12 @@ async function test() {
     process.exit(1);
   }
 
+  const missingLabel = subs.find(s => s.label === undefined);
+  if (missingLabel) {
+    console.log('FAILED: entry missing label field entirely', missingLabel);
+    process.exit(1);
+  }
+
   console.log('SUCCESS');
 }
 
