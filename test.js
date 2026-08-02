@@ -626,7 +626,8 @@ console.log('\n--- sourceSelection ---');
 const {
   filterByLanguage,
   rankCandidatesForLanguage,
-  generateCandidatePairs
+  generateCandidatePairs,
+  buildHebrewEntries
 } = require('./lib/sourceSelection');
 
 test('filterByLanguage: filters by exact lang code', () => {
@@ -710,6 +711,56 @@ test('generateCandidatePairs: top ranked main with same-`g` peer wins over highe
   assert.strictEqual(pairs[0].main.id, 'eng-7');
   assert.strictEqual(pairs[0].trans.id, 'tur-7');
   assert.strictEqual(pairs[0].sameGroup, true);
+});
+
+test('buildHebrewEntries: orders entries by source group order, one per candidate', () => {
+  const groups = [
+    { source: 'wizdom', candidates: [
+      { id: 'wizdom:1', url: 'u1', lang: 'heb', label: 'W1' },
+      { id: 'wizdom:2', url: 'u2', lang: 'heb', label: 'W2' }
+    ] },
+    { source: 'ktuvit', candidates: [
+      { id: 'ktuvit:1', url: 'u3', lang: 'heb', label: 'K1' }
+    ] }
+  ];
+  const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
+  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  assert.strictEqual(entries.length, 3);
+  assert.strictEqual(entries[0].source, 'wizdom');
+  assert.strictEqual(entries[0].mainSub.id, 'wizdom:1');
+  assert.strictEqual(entries[1].mainSub.id, 'wizdom:2');
+  assert.strictEqual(entries[2].source, 'ktuvit');
+  assert.strictEqual(entries[2].fixedSub.id, 'rus:9');
+});
+
+test('buildHebrewEntries: returns empty array when fixedCandidate is missing', () => {
+  const groups = [
+    { source: 'wizdom', candidates: [{ id: 'wizdom:1', url: 'u1', lang: 'heb', label: 'W1' }] }
+  ];
+  const entries = buildHebrewEntries(groups, null, 'rus');
+  assert.strictEqual(entries.length, 0);
+});
+
+test('buildHebrewEntries: skips malformed candidates (missing id or url)', () => {
+  const groups = [
+    { source: 'wizdom', candidates: [
+      { lang: 'heb' },
+      { id: 'wizdom:2', url: 'u2', lang: 'heb', label: 'W2' }
+    ] }
+  ];
+  const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
+  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].mainSub.id, 'wizdom:2');
+});
+
+test('buildHebrewEntries: falls back to id as label when candidate has no label', () => {
+  const groups = [
+    { source: 'opensubtitles', candidates: [{ id: 'opensubtitles:42', url: 'u1', lang: 'heb' }] }
+  ];
+  const fixed = { id: 'rus:9', url: 'u9', lang: 'rus' };
+  const entries = buildHebrewEntries(groups, fixed, 'rus');
+  assert.strictEqual(entries[0].label, 'opensubtitles:42');
 });
 
 // ============================================================================
